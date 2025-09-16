@@ -9,7 +9,7 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN', '8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # قائمة المشرفين (ضع أرقام المستخدمين الخاص بك هنا)
-ADMINS = [123456789]  # استبدل برقمك الحقيقي
+ADMINS = [6521966233]  # استبدل برقمك الحقيقي
 
 # تهيئة قاعدة البيانات
 def init_db():
