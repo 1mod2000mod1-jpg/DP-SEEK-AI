@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# قائمة المشرفين (ضع أرقام المستخدمين الخاص بك هنا)
-ADMINS = [6521966233]  # استبدل برقمك الحقيقي
+# قائمة المشرفين - أنت المشرف الرئيسي
+ADMINS = [6521966233]  # تم إضافة أيديك الخاص كمشرف
 
 # تهيئة قاعدة البيانات
 def init_db():
@@ -28,11 +28,32 @@ def init_db():
                   subscribed_at TIMESTAMP,
                   expires_at TIMESTAMP)''')
     
+    # جدول المشرفين الإضافيين
+    c.execute('''CREATE TABLE IF NOT EXISTS admins 
+                 (user_id INTEGER PRIMARY KEY)''')
+    
+    # إضافة الأيدي الخاص بك كمشرف إذا لم يكن مضافاً
+    c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (6521966233,))
+    
     conn.commit()
     conn.close()
 
 # استدعاء التهيئة عند البدء
 init_db()
+
+# ========== دوال التحقق من الصلاحيات ========== #
+def is_admin(user_id):
+    """التحقق إذا كان المستخدم مشرفاً"""
+    if user_id in ADMINS:
+        return True
+    
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM admins WHERE user_id=?", (user_id,))
+    result = c.fetchone()
+    conn.close()
+    
+    return result is not None
 
 # ========== دوال الحظر ========== #
 def ban_user(user_id, reason="إساءة استخدام"):
@@ -81,7 +102,7 @@ def is_subscribed(user_id):
         return datetime.now() < expires_at
     return False
 
-# ========== أوامر البوت ========== #
+# ========== أوامر البوت الأساسية ========== #
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -116,6 +137,7 @@ def show_help(message):
     للمشرفين فقط:
     /ban - حظر مستخدم (بالرد على رسالته)
     /unban - إلغاء حظر مستخدم
+    /addadmin - إضافة مشرف جديد
     """
     
     bot.reply_to(message, help_text)
@@ -123,10 +145,6 @@ def show_help(message):
 @bot.message_handler(commands=['subscribe'])
 def subscribe_cmd(message):
     user_id = message.from_user.id
-    
-    # في الواقع، هنا ستضيف نظام الدفع الحقيقي
-    # لكن لأغراض الاختبار، سنضيف اشتراك تجريبي
-    
     add_subscription(user_id, 30)  # 30 يوم اشتراك
     bot.reply_to(message, "✅ تم تفعيل اشتراكك لمدة 30 يوم!")
 
@@ -144,8 +162,8 @@ def check_subscription(message):
 def ban_command(message):
     user_id = message.from_user.id
     
-    if user_id not in ADMINS:
-        bot.reply_to(message, "❌ ليس لديك صلاحية لهذا الأمر.")
+    if not is_admin(user_id):
+        bot.reply_to(message, f"❌ ليس لديك صلاحية. رقمك: {user_id}")
         return
         
     if message.reply_to_message:
@@ -161,7 +179,7 @@ def ban_command(message):
 def unban_command(message):
     user_id = message.from_user.id
     
-    if user_id not in ADMINS:
+    if not is_admin(user_id):
         bot.reply_to(message, "❌ ليس لديك صلاحية لهذا الأمر.")
         return
         
@@ -171,6 +189,27 @@ def unban_command(message):
         bot.reply_to(message, f"✅ تم إلغاء حظر المستخدم {target_id}")
     except:
         bot.reply_to(message, "❌ استخدم: /unban <user_id>")
+
+@bot.message_handler(commands=['addadmin'])
+def add_admin_command(message):
+    user_id = message.from_user.id
+    
+    if not is_admin(user_id):
+        bot.reply_to(message, "❌ ليس لديك صلاحية لهذا الأمر.")
+        return
+        
+    try:
+        new_admin_id = int(message.text.split()[1])
+        
+        conn = sqlite3.connect('bot_data.db')
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (new_admin_id,))
+        conn.commit()
+        conn.close()
+        
+        bot.reply_to(message, f"✅ تم إضافة المشرف الجديد: {new_admin_id}")
+    except:
+        bot.reply_to(message, "❌ استخدم: /addadmin <user_id>")
 
 # ========== معالجة الرسائل العادية ========== #
 @bot.message_handler(func=lambda message: True)
@@ -207,4 +246,5 @@ def handle_all_messages(message):
 if __name__ == "__main__":
     print("✅ البوت يعمل بنجاح!")
     print("🤖 نظام الحظر والاشتراك مفعل")
+    print(f"👑 أنت المشرف الرئيسي: 6521966233")
     bot.infinity_polling()
