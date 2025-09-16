@@ -1,5 +1,5 @@
 services:
-  - type: worker  # غير من "web" إلى "worker"
+  - type: web  # ابقى على web service
     name: telegram-bot
     env: python
     plan: free
