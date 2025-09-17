@@ -1,3 +1,22 @@
+import threading
+import requests
+import time
+
+# وظيفة إبقاء البوت نشطاً
+def keep_alive():
+    while True:
+        try:
+            # أرسل طلباً إلى الرابط الخاص بك على Render
+            requests.get("https://mobi-kbdx.onrender.com/", timeout=5)
+            print("✅ تم إرسال نبض حياة إلى Render")
+        except:
+            print("⚠️ فشل إرسال نبض حياة")
+        time.sleep(300)  # كل 5 دقائق
+
+# بدء وظيفة إبقاء البوت نشطاً
+heartbeat_thread = threading.Thread(target=keep_alive)
+heartbeat_thread.daemon = True
+heartbeat_thread.start()
 from flask import Flask
 import threading
 
