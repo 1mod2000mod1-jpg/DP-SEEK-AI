@@ -91,17 +91,17 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     # التحقق من وجود التوكنات
     if TELEGRAM_BOT_TOKEN == "8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY":
-        print("❌ يرجى إضافة TELEGRAM_BOT_TOKEN الفعلي!")
+        print("8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY")
         return
     
-    if not DEEPSEEK_API_KEY:
-        print("❌ يرجى إضافة DEEPSEEK_API_KEY الفعلي!")
+    if not DEEPSEEK_API_KEY: 
+        print("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")
         return
     
     print("🤖 جاري تشغيل البوت...")
     
     try:
-        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        app = Application.builder().token(8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY).build()
         
         # handlers
         app.add_handler(CommandHandler("start", start_command))
