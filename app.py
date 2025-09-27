@@ -101,7 +101,7 @@ def main():
     print("🤖 جاري تشغيل البوت...")
     
     try:
-        app = Application.builder().token(8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY).build()
+        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
         
         # handlers
         app.add_handler(CommandHandler("start", start_command))
