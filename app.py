@@ -1,16 +1,38 @@
 import os
 import requests
 from flask import Flask, request
-import telegram
+import json
 
 app = Flask(__name__)
 
-# التوكنات من متغيرات البيئة
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 
-# إنشاء كائن البوت
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+def send_telegram_message(chat_id, text):
+    """إرسال رسالة عبر تليجرام API مباشرة"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    try:
+        response = requests.post(url, json=data, timeout=10)
+        return response.json()
+    except Exception as e:
+        print(f"Telegram API error: {e}")
+        return None
+
+def send_typing_action(chat_id):
+    """إظهار حالة الكتابة"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction"
+    data = {
+        "chat_id": chat_id,
+        "action": "typing"
+    }
+    try:
+        requests.post(url, json=data, timeout=5)
+    except:
+        pass
 
 def get_ai_response(message_text):
     """الحصول على رد من DeepSeek"""
@@ -60,24 +82,24 @@ def webhook():
                 print(f"💬 Message from {chat_id}: {message_text}")
                 
                 if message_text == '/start':
-                    bot.send_message(
-                        chat_id=chat_id, 
-                        text='🌐 مرحباً! أنا بوت DeepSeek. اسألني أي شيء!'
+                    send_telegram_message(
+                        chat_id, 
+                        '🌐 مرحباً! أنا بوت DeepSeek. اسألني أي شيء!'
                     )
                 elif message_text == '/help':
-                    bot.send_message(
-                        chat_id=chat_id, 
-                        text='💡 فقط أرسل لي أي سؤال وسأجيبك باستخدام الذكاء الاصطناعي!'
+                    send_telegram_message(
+                        chat_id, 
+                        '💡 فقط أرسل لي أي سؤال وسأجيبك باستخدام الذكاء الاصطناعي!'
                     )
                 else:
                     # إظهار حالة الكتابة
-                    bot.send_chat_action(chat_id=chat_id, action="typing")
+                    send_typing_action(chat_id)
                     
                     # الحصول على الرد من الذكاء الاصطناعي
                     response = get_ai_response(message_text)
                     
                     # إرسال الرد
-                    bot.send_message(chat_id=chat_id, text=response)
+                    send_telegram_message(chat_id, response)
             
             return 'OK'
             
@@ -90,53 +112,27 @@ def set_webhook():
     """تعيين الويبهوك"""
     try:
         webhook_url = f"https://{request.host}/webhook"
-        result = bot.set_webhook(webhook_url)
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook"
+        data = {"url": webhook_url}
+        
+        response = requests.post(url, json=data)
+        result = response.json()
+        
         return f'''
         <h1>✅ تم تعيين الويبهوك بنجاح!</h1>
         <p><strong>الرابط:</strong> {webhook_url}</p>
         <p><strong>النتيجة:</strong> {result}</p>
-        <p>الآن يمكنك استخدام البوت في تليجرام!</p>
         '''
     except Exception as e:
         return f'<h1>❌ خطأ في تعيين الويبهوك:</h1><p>{e}</p>'
-
-@app.route('/test', methods=['GET'])
-def test():
-    """صفحة اختبار"""
-    return '''
-    <h1>🤖 اختبار البوت</h1>
-    <ul>
-        <li><a href="/">الصفحة الرئيسية</a></li>
-        <li><a href="/setwebhook">تعيين الويبهوك</a></li>
-        <li><a href="/getwebhook">معلومات الويبهوك</a></li>
-    </ul>
-    '''
-
-@app.route('/getwebhook', methods=['GET'])
-def get_webhook():
-    """الحصول على معلومات الويبهوك"""
-    try:
-        webhook_info = bot.get_webhook_info()
-        return f'''
-        <h1>🔍 معلومات الويبهوك</h1>
-        <p><strong>URL:</strong> {webhook_info.url or 'Not set'}</p>
-        <p><strong>Pending Updates:</strong> {webhook_info.pending_update_count}</p>
-        '''
-    except Exception as e:
-        return f'<h1>❌ خطأ:</h1><p>{e}</p>'
 
 if __name__ == '__main__':
     print("🚀 بدء تشغيل البوت...")
     
     if TELEGRAM_TOKEN:
-        print(f"✅ تم تحميل توكن البوت: {TELEGRAM_TOKEN[:10]}...")
+        print(f"✅ تم تحميل توكن البوت")
     else:
         print("❌ لم يتم العثور على TELEGRAM_TOKEN")
-    
-    if DEEPSEEK_API_KEY:
-        print("✅ تم تحميل مفتاح DeepSeek")
-    else:
-        print("❌ لم يتم العثور على DEEPSEEK_API_KEY")
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
