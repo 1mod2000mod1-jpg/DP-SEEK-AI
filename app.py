@@ -272,7 +272,7 @@ def handle_all_messages(message):
     # معالجة الرسالة باستخدام الذكاء الاصطناعي
     try:
         txt = message.text
-        res = requests.get(f"https://sii3.moayman.top/api/deepseek.php?v3={txt}", timeout=10)
+        res = requests.get(f"https://api.deepseek.com/chat/completions{txt}", timeout=10)
         res.raise_for_status()
         data = res.json()
         response = data.get("response", "❌ لا يوجد رد من الخادم")
