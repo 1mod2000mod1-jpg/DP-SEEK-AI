@@ -1,41 +1,48 @@
 import os
 import requests
 from flask import Flask, request
+import telegram
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Dispatcher, MessageHandler, Filters, CommandHandler
+import json
 
 app = Flask(__name__)
 
-# التوكنات من متغيرات البيئة في Render
+# التوكنات من متغيرات البيئة
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 
-# إنشاء تطبيق تليجرام
-telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+# إنشاء كائن البوت
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('🌐 مرحباً! أنا الآن أعمل على السحابة!')
+def start(update, context):
+    """معالجة أمر /start"""
+    update.message.reply_text('🌐 مرحباً! أنا الآن أعمل على السحابة!')
 
-async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('💡 أرسل لي أي سؤال وسأجيبك!')
+def help(update, context):
+    """معالجة أمر /help"""
+    update.message.reply_text('💡 أرسل لي أي سؤال وسأجيبك باستخدام DeepSeek!')
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_message(update, context):
+    """معالجة الرسائل النصية"""
     user_message = update.message.text
     
-    await update.message.reply_chat_action(action="typing")
-    
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    data = {
-        "model": "deepseek-chat",
-        "messages": [{"role": "user", "content": user_message}],
-        "max_tokens": 1000
-    }
-    
     try:
+        # إظهار حالة الكتابة
+        bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
+        
+        # استخدام DeepSeek API
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [{"role": "user", "content": user_message}],
+            "max_tokens": 1000
+        }
+        
         response = requests.post(
             "https://api.deepseek.com/chat/completions",
             headers=headers,
@@ -45,17 +52,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if response.status_code == 200:
             ai_response = response.json()["choices"][0]["message"]["content"]
-            await update.message.reply_text(ai_response)
+            update.message.reply_text(ai_response)
         else:
-            await update.message.reply_text("❌ حدث خطأ في الاتصال")
+            update.message.reply_text("❌ حدث خطأ في الاتصال بالذكاء الاصطناعي")
             
     except Exception as e:
-        await update.message.reply_text("❌ عذراً، حدث خطأ")
-
-# إعداد ال handlers
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("help", help))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        print(f"Error: {e}")
+        update.message.reply_text("❌ عذراً، حدث خطأ غير متوقع")
 
 @app.route('/')
 def home():
@@ -63,23 +66,55 @@ def home():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # استقبال البيانات من تليجرام
-    json_data = request.get_json()
-    update = Update.de_json(json_data, telegram_app.bot)
-    telegram_app.process_update(update)
-    return 'OK'
+    """معالجة ويبهوك تليجرام"""
+    if request.method == 'POST':
+        try:
+            # تحليل البيانات الواردة من تليجرام
+            data = request.get_json()
+            update = Update.de_json(data, bot)
+            
+            # إنشاء dispatcher ومعالجة التحديث
+            dispatcher = Dispatcher(bot, None, workers=0)
+            
+            # إضافة handlers
+            dispatcher.add_handler(CommandHandler("start", start))
+            dispatcher.add_handler(CommandHandler("help", help))
+            dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+            
+            # معالجة التحديث
+            dispatcher.process_update(update)
+            
+            return 'OK'
+        except Exception as e:
+            print(f"Webhook error: {e}")
+            return 'Error', 500
 
+@app.route('/setwebhook', methods=['GET'])
 def set_webhook():
-    # الحصول على عنوان التطبيق من Render
-    render_url = os.getenv('RENDER_EXTERNAL_URL')
-    if render_url:
-        webhook_url = f"{render_url}/webhook"
-        telegram_app.bot.set_webhook(webhook_url)
-        print(f"✅ تم تعيين الويبهوك: {webhook_url}")
+    """تعيين ويبهوك تليجرام"""
+    try:
+        # الحصول على عنوان التطبيق
+        webhook_url = f"https://{request.host}/webhook"
+        
+        # تعيين الويبهوك
+        result = bot.set_webhook(webhook_url)
+        
+        return f'✅ تم تعيين الويبهوك: {webhook_url}<br>النتيجة: {result}'
+    except Exception as e:
+        return f'❌ خطأ في تعيين الويبهوك: {e}'
+
+@app.route('/removewebhook', methods=['GET'])
+def remove_webhook():
+    """إزالة الويبهوك"""
+    try:
+        result = bot.delete_webhook()
+        return f'✅ تم إزالة الويبهوك: {result}'
+    except Exception as e:
+        return f'❌ خطأ في إزالة الويبهوك: {e}'
 
 if __name__ == '__main__':
     print("🤖 جاري تشغيل البوت على السحابة...")
-    set_webhook()
+    print(f"✅ توكن البوت: {TELEGRAM_TOKEN[:10]}...")
     
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
