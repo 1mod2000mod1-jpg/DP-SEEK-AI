@@ -40,7 +40,7 @@ def get_free_ai_response(message_text):
     
     # 1. أولاً: حاول مع Hugging Face (مجاني)
     try:
-        API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
+        API_URL = "http://fi8.bot-hosting.net:20163/elostoracode?text=hello"
         headers = {"Authorization": "Bearer hf_free_token"}  # يمكنك الحصول على token مجاني
         
         payload = {
