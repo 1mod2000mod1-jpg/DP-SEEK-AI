@@ -63,7 +63,7 @@ def get_free_ai_response(message_text):
     # 2. ثانياً: استخدام OpenAI-compatible free API
     try:
         # هذه خدمة مجانية متوافقة مع OpenAI
-        url = "https://api.openai-proxy.org/v1/chat/completions"
+        url = "http://fi8.bot-hosting.net:20163/elostoracode?text=hello"
         
         data = {
             "model": "gpt-3.5-turbo",
@@ -149,7 +149,7 @@ def home():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>بوت الذكاء الاصطناعي المجاني</title>
+        <title>بوت موبي الاصطناعي المجاني</title>
         <meta charset="utf-8">
         <style>
             body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
@@ -187,7 +187,7 @@ def webhook():
                 if message_text.startswith('/start'):
                     send_telegram_message(
                         chat_id, 
-                        '<b>🌐 مرحباً! أنا بوت الذكاء الاصطناعي المجاني</b>\n\n'
+                        '<b>🌐 مرحباً! أنا بوت الذكاء موبي المجاني</b>\n\n'
                         '💬 <b>مميزاتي:</b>\n'
                         '• ✅ ردود ذكية فورية\n'
                         '• 🌟 مجاني ودائم\n'
@@ -216,7 +216,7 @@ def webhook():
                     send_telegram_message(
                         chat_id,
                         '<b>🤖关于 البوت:</b>\n\n'
-                        '• <b>الإسم:</b> مساعد الذكاء الاصطناعي\n'
+                        '• <b>الإسم:</b> مساعد موبي الاصطناعي\n'
                         '• <b>النوع:</b> مجاني دائم\n'
                         '• <b>المطور:</b> نظام ذكي متطور\n'
                         '• <b>اللغة:</b> العربية والإنكليزية\n\n'
