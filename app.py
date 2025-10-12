@@ -1,127 +1,210 @@
-#!/usr/bin/env python3
-import os
-import logging
 import telebot
+import requests
+import sqlite3
+import os
+from datetime import datetime, timedelta
 
-# إعداد التسجيل
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# التوكن
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-
-if not BOT_TOKEN:
-    logger.error("❌ TELEGRAM_BOT_TOKEN غير معروف")
-    exit(1)
-
-# إنشاء البوت
+# توكن البوت - سيتم تعيينه من متغير البيئة
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY')
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# قائمة المشرفين (ضع أرقام المستخدمين الخاص بك هنا)
+ADMINS = [6521966233]  # استبدل برقمك الحقيقي
+
+# تهيئة قاعدة البيانات
+def init_db():
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    
+    # جدول الأعضاء المحظورين
+    c.execute('''CREATE TABLE IF NOT EXISTS banned_users
+                 (user_id INTEGER PRIMARY KEY, 
+                  reason TEXT, 
+                  banned_at TIMESTAMP)''')
+    
+    # جدول المشتركين
+    c.execute('''CREATE TABLE IF NOT EXISTS subscribed_users
+                 (user_id INTEGER PRIMARY KEY,
+                  subscribed_at TIMESTAMP,
+                  expires_at TIMESTAMP)''')
+    
+    conn.commit()
+    conn.close()
+
+# استدعاء التهيئة عند البدء
+init_db()
+
+# ========== دوال الحظر ========== #
+def ban_user(user_id, reason="إساءة استخدام"):
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO banned_users VALUES (?, ?, ?)",
+              (user_id, reason, datetime.now()))
+    conn.commit()
+    conn.close()
+
+def unban_user(user_id):
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM banned_users WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def is_banned(user_id):
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM banned_users WHERE user_id=?", (user_id,))
+    result = c.fetchone()
+    conn.close()
+    return result is not None
+
+# ========== دوال الاشتراك ========== #
+def add_subscription(user_id, days=30):
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    subscribed_at = datetime.now()
+    expires_at = subscribed_at + timedelta(days=days)
+    c.execute("INSERT OR REPLACE INTO subscribed_users VALUES (?, ?, ?)",
+              (user_id, subscribed_at, expires_at))
+    conn.commit()
+    conn.close()
+
+def is_subscribed(user_id):
+    conn = sqlite3.connect('bot_data.db')
+    c = conn.cursor()
+    c.execute("SELECT expires_at FROM subscribed_users WHERE user_id=?", (user_id,))
+    result = c.fetchone()
+    conn.close()
+    
+    if result:
+        expires_at = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S.%f')
+        return datetime.now() < expires_at
+    return False
+
+# ========== أوامر البوت ========== #
 @bot.message_handler(commands=['start'])
-def handle_start(message):
-    try:
-        welcome_text = """
-🎉 **مرحباً! البوت يعمل بنجاح**
-
-🤖 **تم النشر على Render بنجاح**
-
-✅ **الحالة: نشط ومستقر**
-
-💡 **جرب هذه الأوامر:**
-/start - هذه الرسالة
-/ping - فحص الاتصال
-/help - المساعدة
-/about - معلومات عن البوت
-        """
-        bot.send_message(message.chat.id, welcome_text)
-        logger.info(f"✅ تم معالجة /start من {message.from_user.first_name}")
-    except Exception as e:
-        logger.error(f"❌ خطأ في /start: {e}")
-
-@bot.message_handler(commands=['ping'])
-def handle_ping(message):
-    try:
-        bot.send_message(message.chat.id, "🏓 **pong!**\n\n✅ البوت يعمل بشكل ممتاز!")
-        logger.info(f"✅ تم معالجة /ping من {message.from_user.first_name}")
-    except Exception as e:
-        logger.error(f"❌ خطأ في /ping: {e}")
+def send_welcome(message):
+    user_id = message.from_user.id
+    
+    if is_banned(user_id):
+        bot.reply_to(message, "❌ تم حظرك من استخدام البوت.")
+        return
+        
+    welcome_text = """
+    🌹 أهلاً وسهلاً بك!
+    
+    أنا بوت الذكاء الاصطناعي، يمكنك محاورتي في أي موضوع.
+    
+    📋 الأوامر المتاحة:
+    /help - عرض المساعدة
+    /mysub - التحقق من حالة الاشتراك
+    /subscribe - الاشتراك في البوت
+    """
+    
+    bot.reply_to(message, welcome_text)
 
 @bot.message_handler(commands=['help'])
-def handle_help(message):
+def show_help(message):
+    help_text = """
+    🆘 أوامر المساعدة:
+    
+    /start - بدء استخدام البوت
+    /help - عرض هذه المساعدة
+    /mysub - التحقق من حالة الاشتراك
+    /subscribe - الاشتراك في البوت
+    
+    للمشرفين فقط:
+    /ban - حظر مستخدم (بالرد على رسالته)
+    /unban - إلغاء حظر مستخدم
+    """
+    
+    bot.reply_to(message, help_text)
+
+@bot.message_handler(commands=['subscribe'])
+def subscribe_cmd(message):
+    user_id = message.from_user.id
+    
+    # في الواقع، هنا ستضيف نظام الدفع الحقيقي
+    # لكن لأغراض الاختبار، سنضيف اشتراك تجريبي
+    
+    add_subscription(user_id, 30)  # 30 يوم اشتراك
+    bot.reply_to(message, "✅ تم تفعيل اشتراكك لمدة 30 يوم!")
+
+@bot.message_handler(commands=['mysub'])
+def check_subscription(message):
+    user_id = message.from_user.id
+    
+    if is_subscribed(user_id):
+        bot.reply_to(message, "✅ اشتراكك مفعل ومازال صالحاً")
+    else:
+        bot.reply_to(message, "❌ ليس لديك اشتراك فعال. /subscribe")
+
+# ========== أوامر المشرفين ========== #
+@bot.message_handler(commands=['ban'])
+def ban_command(message):
+    user_id = message.from_user.id
+    
+    if user_id not in ADMINS:
+        bot.reply_to(message, "❌ ليس لديك صلاحية لهذا الأمر.")
+        return
+        
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        reason = message.text.split(' ', 1)[1] if len(message.text.split()) > 1 else "إساءة استخدام"
+        
+        ban_user(target_id, reason)
+        bot.reply_to(message, f"✅ تم حظر المستخدم {target_id}")
+    else:
+        bot.reply_to(message, "❌ يجب الرد على رسالة المستخدم لحظره.")
+
+@bot.message_handler(commands=['unban'])
+def unban_command(message):
+    user_id = message.from_user.id
+    
+    if user_id not in ADMINS:
+        bot.reply_to(message, "❌ ليس لديك صلاحية لهذا الأمر.")
+        return
+        
     try:
-        help_text = """
-🆘 **مركز المساعدة**
+        target_id = int(message.text.split()[1])
+        unban_user(target_id)
+        bot.reply_to(message, f"✅ تم إلغاء حظر المستخدم {target_id}")
+    except:
+        bot.reply_to(message, "❌ استخدم: /unban <user_id>")
 
-**الأوامر المتاحة:**
-/start - بدء البوت
-/ping - فحص الاتصال
-/help - هذه الرسالة
-/about - معلومات عن البوت
-
-**معلومات تقنية:**
-• يعمل على Render.com
-• Python 3.10+
-• إصدار مستقر
-        """
-        bot.send_message(message.chat.id, help_text)
-        logger.info(f"✅ تم معالجة /help من {message.from_user.first_name}")
-    except Exception as e:
-        logger.error(f"❌ خطأ في /help: {e}")
-
-@bot.message_handler(commands=['about'])
-def handle_about(message):
-    try:
-        about_text = """
-🤖 **معلومات عن البوت**
-
-**المميزات:**
-✅ يعمل على السحابة (Render)
-✅ مستقر وسريع
-✅ يدعم الأوامر الأساسية
-✅ سهل التطوير
-
-**التقنيات:**
-• Python
-• pyTelegramBotAPI
-• Render.com
-        """
-        bot.send_message(message.chat.id, about_text)
-        logger.info(f"✅ تم معالجة /about من {message.from_user.first_name}")
-    except Exception as e:
-        logger.error(f"❌ خطأ في /about: {e}")
-
+# ========== معالجة الرسائل العادية ========== #
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
-    try:
-        response = f"💬 **رسالتك:** {message.text}\n\n💡 استخدم /help لرؤية الأوامر المتاحة"
-        bot.send_message(message.chat.id, response)
-        logger.info(f"📩 رسالة من {message.from_user.first_name}: {message.text}")
-    except Exception as e:
-        logger.error(f"❌ خطأ في معالجة الرسالة: {e}")
-
-def main():
-    """الدالة الرئيسية"""
-    logger.info("🚀 بدء تشغيل البوت...")
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
     
+    # التحقق من الحظر
+    if is_banned(user_id):
+        bot.reply_to(message, "❌ تم حظرك من استخدام البوت.")
+        return
+        
+    # التحقق من الاشتراك
+    if not is_subscribed(user_id):
+        bot.reply_to(message, f"⚠️ عذراً {user_name},\nيجب الاشتراك لاستخدام البوت.\n\nاستخدم /subscribe للاشتراك")
+        return
+    
+    # إظهار حالة "يكتب..." للمستخدم
+    bot.send_chat_action(message.chat.id, 'typing')
+    
+    # معالجة الرسالة باستخدام الذكاء الاصطناعي
     try:
-        # إزالة أي webhook سابق
-        bot.remove_webhook()
-        
-        logger.info("✅ البوت جاهز للاستقبال...")
-        
-        # بدء الاستماع
-        bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        
+        txt = message.text
+        res = requests.get(f"https://sii3.top/api/deepseek.php?v3={txt}", timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        response = data.get("response", "❌ لا يوجد رد من الخادم")
+        bot.reply_to(message, response)
     except Exception as e:
-        logger.error(f"❌ خطأ رئيسي: {e}")
-        
-        # إعادة المحاولة بعد 10 ثواني
-        import time
-        time.sleep(10)
-        main()
+        print(f"Error: {e}")
+        bot.reply_to(message, "⚠️ عذراً، حدث خطأ في المعالجة")
 
+# ========== تشغيل البوت ========== #
 if __name__ == "__main__":
-    main()
+    print("✅ البوت يعمل بنجاح!")
+    print("🤖 نظام الحظر والاشتراك مفعل")
+    bot.infinity_polling()
