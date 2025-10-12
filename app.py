@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 
 # توكن البوت
-BOT_TOKEN = os.environ.get('8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY')
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # قائمة المشرفين
