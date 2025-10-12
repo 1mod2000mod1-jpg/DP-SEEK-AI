@@ -1,19 +1,23 @@
+from flask import Flask, request, jsonify
 import telebot
 import requests
 import sqlite3
 import os
 from datetime import datetime, timedelta
 
-# توكن البوت - سيتم تعيينه من متغير البيئة
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY')
+# تهيئة Flask
+app = Flask(__name__)
+
+# توكن البوت
+BOT_TOKEN = os.environ.get('8389962293:AAHrLNDdcvL9M1jvTuv4n2pUKwa8F2deBYY')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# قائمة المشرفين (ضع أرقام المستخدمين الخاص بك هنا)
+# قائمة المشرفين
 ADMINS = [6521966233]  # استبدل برقمك الحقيقي
 
 # تهيئة قاعدة البيانات
 def init_db():
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
     
     # جدول الأعضاء المحظورين
@@ -36,7 +40,7 @@ init_db()
 
 # ========== دوال الحظر ========== #
 def ban_user(user_id, reason="إساءة استخدام"):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO banned_users VALUES (?, ?, ?)",
               (user_id, reason, datetime.now()))
@@ -44,14 +48,14 @@ def ban_user(user_id, reason="إساءة استخدام"):
     conn.close()
 
 def unban_user(user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("DELETE FROM banned_users WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
 
 def is_banned(user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT * FROM banned_users WHERE user_id=?", (user_id,))
     result = c.fetchone()
@@ -60,7 +64,7 @@ def is_banned(user_id):
 
 # ========== دوال الاشتراك ========== #
 def add_subscription(user_id, days=30):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
     subscribed_at = datetime.now()
     expires_at = subscribed_at + timedelta(days=days)
@@ -70,7 +74,7 @@ def add_subscription(user_id, days=30):
     conn.close()
 
 def is_subscribed(user_id):
-    conn = sqlite3.connect('bot_data.db')
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("SELECT expires_at FROM subscribed_users WHERE user_id=?", (user_id,))
     result = c.fetchone()
@@ -116,6 +120,7 @@ def show_help(message):
     للمشرفين فقط:
     /ban - حظر مستخدم (بالرد على رسالته)
     /unban - إلغاء حظر مستخدم
+    /stats - إحصائيات البوت
     """
     
     bot.reply_to(message, help_text)
@@ -124,8 +129,9 @@ def show_help(message):
 def subscribe_cmd(message):
     user_id = message.from_user.id
     
-    # في الواقع، هنا ستضيف نظام الدفع الحقيقي
-    # لكن لأغراض الاختبار، سنضيف اشتراك تجريبي
+    if is_banned(user_id):
+        bot.reply_to(message, "❌ تم حظرك من استخدام البوت.")
+        return
     
     add_subscription(user_id, 30)  # 30 يوم اشتراك
     bot.reply_to(message, "✅ تم تفعيل اشتراكك لمدة 30 يوم!")
@@ -134,10 +140,14 @@ def subscribe_cmd(message):
 def check_subscription(message):
     user_id = message.from_user.id
     
+    if is_banned(user_id):
+        bot.reply_to(message, "❌ تم حظرك من استخدام البوت.")
+        return
+    
     if is_subscribed(user_id):
         bot.reply_to(message, "✅ اشتراكك مفعل ومازال صالحاً")
     else:
-        bot.reply_to(message, "❌ ليس لديك اشتراك فعال. /subscribe")
+        bot.reply_to(message, "❌ ليس لديك اشتراك فعال. استخدم /subscribe للاشتراك")
 
 # ========== أوامر المشرفين ========== #
 @bot.message_handler(commands=['ban'])
@@ -172,6 +182,37 @@ def unban_command(message):
     except:
         bot.reply_to(message, "❌ استخدم: /unban <user_id>")
 
+@bot.message_handler(commands=['stats'])
+def stats_command(message):
+    user_id = message.from_user.id
+    
+    if user_id not in ADMINS:
+        bot.reply_to(message, "❌ ليس لديك صلاحية لهذا الأمر.")
+        return
+    
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
+    c = conn.cursor()
+    
+    # عدد المشتركين
+    c.execute("SELECT COUNT(*) FROM subscribed_users WHERE expires_at > ?", (datetime.now(),))
+    active_subs = c.fetchone()[0]
+    
+    # عدد المحظورين
+    c.execute("SELECT COUNT(*) FROM banned_users")
+    banned_users = c.fetchone()[0]
+    
+    conn.close()
+    
+    stats_text = f"""
+    📊 إحصائيات البوت:
+    
+    👥 المشتركين النشطين: {active_subs}
+    🚫 المستخدمين المحظورين: {banned_users}
+    🚀 حالة البوت: نشط ✅
+    """
+    
+    bot.reply_to(message, stats_text)
+
 # ========== معالجة الرسائل العادية ========== #
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
@@ -203,8 +244,49 @@ def handle_all_messages(message):
         print(f"Error: {e}")
         bot.reply_to(message, "⚠️ عذراً، حدث خطأ في المعالجة")
 
-# ========== تشغيل البوت ========== #
-if __name__ == "__main__":
-    print("✅ البوت يعمل بنجاح!")
-    print("🤖 نظام الحظر والاشتراك مفعل")
-    bot.infinity_polling()
+# ========== routes للويب هوك ========== #
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return 'Invalid content type', 403
+
+@app.route('/')
+def home():
+    return jsonify({
+        "status": "Bot is running!",
+        "service": "Telegram AI Bot",
+        "version": "1.0"
+    })
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy"})
+
+# ========== تشغيل التطبيق ========== #
+if __name__ == '__main__':
+    print("🚀 بدء تشغيل بوت التلغرام...")
+    
+    # حذف الويب هوك القديم
+    try:
+        bot.remove_webhook()
+        print("✅ تم حذف الويب هوك القديم")
+    except Exception as e:
+        print(f"⚠️ خطأ في حذف الويب هوك: {e}")
+    
+    # تعيين الويب هوك الجديد
+    try:
+        webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/webhook"
+        bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+        print(f"✅ تم تعيين الويب هوك: {webhook_url}")
+    except Exception as e:
+        print(f"⚠️ خطأ في تعيين الويب هوك: {e}")
+    
+    # تشغيل الخادم
+    port = int(os.environ.get('PORT', 5000))
+    print(f"🌐 الخادم يعمل على المنفذ: {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
