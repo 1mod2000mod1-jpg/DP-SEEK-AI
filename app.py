@@ -352,15 +352,227 @@ def webhook():
 
 @app.route('/')
 def home():
-    return jsonify({
-        "status": "Bot is running!",
-        "service": "Telegram AI Bot + Web API",
-        "version": "2.0",
-        "endpoints": {
-            "chat": "/api/chat",
-            "history": "/api/history/<session_id>"
+    # عرض صفحة الموقع مباشرة
+    return """
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بوت الذكاء الاصطناعي</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
-    })
+        .container {
+            width: 90%;
+            max-width: 800px;
+            height: 90vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 5px; }
+        .header p { font-size: 14px; opacity: 0.9; }
+        .chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f5f5f5;
+        }
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+            animation: slideIn 0.3s ease;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message.user { justify-content: flex-end; }
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message.bot .message-content {
+            background: white;
+            color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border 0.3s;
+        }
+        #messageInput:focus { border-color: #667eea; }
+        #sendBtn {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        #sendBtn:hover { transform: scale(1.05); }
+        #sendBtn:active { transform: scale(0.95); }
+        #sendBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .typing-indicator {
+            display: none;
+            padding: 12px 18px;
+            background: white;
+            border-radius: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            width: fit-content;
+        }
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            margin: 0 2px;
+            animation: typing 1.4s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+        @media (max-width: 600px) {
+            .container { width: 100%; height: 100vh; border-radius: 0; }
+            .message-content { max-width: 85%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 بوت الذكاء الاصطناعي</h1>
+            <p>أهلاً بك! اسألني عن أي شيء</p>
+        </div>
+        <div class="chat-box" id="chatBox">
+            <div class="message bot">
+                <div class="message-content">
+                    مرحباً! 👋 أنا بوت ذكاء اصطناعي جاهز لمساعدتك. كيف يمكنني مساعدتك اليوم؟
+                </div>
+            </div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="اكتب رسالتك هنا..." autocomplete="off"/>
+            <button id="sendBtn">إرسال</button>
+        </div>
+    </div>
+    <script>
+        const API_URL = window.location.origin + '/api/chat';
+        let sessionId = localStorage.getItem('sessionId') || null;
+        const chatBox = document.getElementById('chatBox');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        sendBtn.addEventListener('click', sendMessage);
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+            addMessage(message, 'user');
+            messageInput.value = '';
+            const typingIndicator = showTypingIndicator();
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message, session_id: sessionId })
+                });
+                const data = await response.json();
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    localStorage.setItem('sessionId', sessionId);
+                }
+                typingIndicator.remove();
+                addMessage(data.response, 'bot');
+            } catch (error) {
+                console.error('Error:', error);
+                typingIndicator.remove();
+                addMessage('عذراً، حدث خطأ في الاتصال. حاول مرة أخرى.', 'bot');
+            }
+            messageInput.disabled = false;
+            sendBtn.disabled = false;
+            messageInput.focus();
+        }
+
+        function addMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = text;
+            messageDiv.appendChild(contentDiv);
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message bot';
+            indicator.innerHTML = `<div class="typing-indicator" style="display: block;"><span></span><span></span><span></span></div>`;
+            chatBox.appendChild(indicator);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return indicator;
+        }
+        messageInput.focus();
+    </script>
+</body>
+</html>
+    """
 
 @app.route('/health')
 def health_check():
