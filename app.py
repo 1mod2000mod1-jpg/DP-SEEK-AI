@@ -359,149 +359,397 @@ def home():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بوت الذكاء الاصطناعي</title>
+    <title>موبي - بوت الذكاء الاصطناعي</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #0a0a0a;
             height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
+            overflow: hidden;
+            position: relative;
         }
+
+        /* خلفية الأضواء المتحركة */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: 0;
+        }
+
+        .light {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.6;
+            animation: float 8s infinite ease-in-out;
+        }
+
+        .light:nth-child(1) {
+            width: 300px;
+            height: 300px;
+            background: linear-gradient(45deg, #ff006e, #8338ec);
+            top: -100px;
+            left: -100px;
+            animation-delay: 0s;
+        }
+
+        .light:nth-child(2) {
+            width: 350px;
+            height: 350px;
+            background: linear-gradient(45deg, #3a86ff, #06ffa5);
+            bottom: -100px;
+            right: -100px;
+            animation-delay: 2s;
+        }
+
+        .light:nth-child(3) {
+            width: 250px;
+            height: 250px;
+            background: linear-gradient(45deg, #fb5607, #ffbe0b);
+            top: 50%;
+            right: -100px;
+            animation-delay: 4s;
+        }
+
+        .light:nth-child(4) {
+            width: 280px;
+            height: 280px;
+            background: linear-gradient(45deg, #06ffa5, #3a86ff);
+            bottom: 20%;
+            left: 10%;
+            animation-delay: 1s;
+        }
+
+        .light:nth-child(5) {
+            width: 320px;
+            height: 320px;
+            background: linear-gradient(45deg, #8338ec, #ff006e);
+            top: 20%;
+            left: 50%;
+            animation-delay: 3s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+            25% { transform: translate(50px, -50px) scale(1.1); opacity: 0.8; }
+            50% { transform: translate(-30px, 30px) scale(0.9); opacity: 0.5; }
+            75% { transform: translate(40px, 60px) scale(1.05); opacity: 0.7; }
+        }
+
+        /* نجوم براقة */
+        .stars {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .star {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: white;
+            border-radius: 50%;
+            animation: twinkle 3s infinite;
+        }
+
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.5); }
+        }
+
         .container {
             width: 90%;
-            max-width: 800px;
+            max-width: 850px;
             height: 90vh;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            box-shadow: 0 25px 80px rgba(138, 43, 226, 0.4),
+                        0 0 100px rgba(0, 191, 255, 0.3),
+                        inset 0 0 60px rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative;
+            z-index: 10;
+            animation: containerGlow 4s infinite alternate;
         }
+
+        @keyframes containerGlow {
+            0% { box-shadow: 0 25px 80px rgba(138, 43, 226, 0.4), 0 0 100px rgba(0, 191, 255, 0.3); }
+            50% { box-shadow: 0 25px 80px rgba(255, 0, 110, 0.5), 0 0 120px rgba(6, 255, 165, 0.4); }
+            100% { box-shadow: 0 25px 80px rgba(251, 86, 7, 0.4), 0 0 100px rgba(138, 43, 226, 0.3); }
+        }
+
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, rgba(138, 43, 226, 0.9), rgba(255, 0, 110, 0.9));
             color: white;
-            padding: 25px;
+            padding: 30px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
         }
-        .header h1 { font-size: 28px; margin-bottom: 5px; }
-        .header p { font-size: 14px; opacity: 0.9; }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+            animation: shine 3s infinite;
+        }
+
+        @keyframes shine {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+
+        .header h1 {
+            font-size: 38px;
+            margin-bottom: 8px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.8),
+                         0 0 40px rgba(138, 43, 226, 0.6);
+            animation: pulse 2s infinite;
+            position: relative;
+            z-index: 1;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.95;
+            position: relative;
+            z-index: 1;
+        }
+
         .chat-box {
             flex: 1;
-            padding: 20px;
+            padding: 25px;
             overflow-y: auto;
-            background: #f5f5f5;
+            background: rgba(10, 10, 20, 0.6);
+            position: relative;
         }
+
+        .chat-box::-webkit-scrollbar { width: 8px; }
+        .chat-box::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+        .chat-box::-webkit-scrollbar-thumb { 
+            background: linear-gradient(180deg, #8a2be2, #ff006e);
+            border-radius: 10px;
+        }
+
         .message {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             display: flex;
             align-items: flex-start;
-            animation: slideIn 0.3s ease;
+            animation: slideIn 0.5s ease;
         }
+
         @keyframes slideIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
         .message.user { justify-content: flex-end; }
+
         .message-content {
             max-width: 70%;
-            padding: 12px 18px;
-            border-radius: 18px;
+            padding: 15px 20px;
+            border-radius: 20px;
             word-wrap: break-word;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
+
         .message.user .message-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8a2be2, #ff006e);
             color: white;
-            border-bottom-right-radius: 4px;
+            border-bottom-right-radius: 5px;
+            animation: messageGlow 2s infinite alternate;
         }
+
+        @keyframes messageGlow {
+            0% { box-shadow: 0 5px 15px rgba(138, 43, 226, 0.5); }
+            100% { box-shadow: 0 5px 25px rgba(255, 0, 110, 0.7); }
+        }
+
         .message.bot .message-content {
-            background: white;
-            color: #333;
-            border-bottom-left-radius: 4px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background: linear-gradient(135deg, rgba(58, 134, 255, 0.9), rgba(6, 255, 165, 0.9));
+            color: white;
+            border-bottom-left-radius: 5px;
+            animation: botGlow 2s infinite alternate;
         }
+
+        @keyframes botGlow {
+            0% { box-shadow: 0 5px 15px rgba(58, 134, 255, 0.5); }
+            100% { box-shadow: 0 5px 25px rgba(6, 255, 165, 0.7); }
+        }
+
         .input-area {
-            padding: 20px;
-            background: white;
-            border-top: 1px solid #e0e0e0;
+            padding: 25px;
+            background: rgba(20, 20, 30, 0.9);
+            border-top: 2px solid rgba(255, 255, 255, 0.1);
             display: flex;
-            gap: 10px;
+            gap: 15px;
         }
+
         #messageInput {
             flex: 1;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 25px;
+            padding: 18px 25px;
+            border: 2px solid rgba(138, 43, 226, 0.5);
+            border-radius: 30px;
             font-size: 16px;
             outline: none;
-            transition: border 0.3s;
+            transition: all 0.3s;
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
-        #messageInput:focus { border-color: #667eea; }
+
+        #messageInput::placeholder { color: rgba(255,255,255,0.5); }
+
+        #messageInput:focus {
+            border-color: #8a2be2;
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.6);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
         #sendBtn {
-            padding: 15px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 18px 35px;
+            background: linear-gradient(135deg, #8a2be2, #ff006e);
             color: white;
             border: none;
-            border-radius: 25px;
+            border-radius: 30px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 17px;
             font-weight: bold;
-            transition: transform 0.2s;
+            transition: all 0.3s;
+            box-shadow: 0 5px 20px rgba(138, 43, 226, 0.5);
+            position: relative;
+            overflow: hidden;
         }
-        #sendBtn:hover { transform: scale(1.05); }
+
+        #sendBtn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        #sendBtn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        #sendBtn:hover {
+            transform: scale(1.08);
+            box-shadow: 0 8px 30px rgba(255, 0, 110, 0.7);
+        }
+
         #sendBtn:active { transform: scale(0.95); }
-        #sendBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+        #sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
         .typing-indicator {
             display: none;
-            padding: 12px 18px;
-            background: white;
-            border-radius: 18px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 15px 20px;
+            background: linear-gradient(135deg, rgba(58, 134, 255, 0.8), rgba(6, 255, 165, 0.8));
+            border-radius: 20px;
             width: fit-content;
+            box-shadow: 0 5px 15px rgba(58, 134, 255, 0.5);
         }
+
         .typing-indicator span {
             display: inline-block;
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            background: #667eea;
-            margin: 0 2px;
+            background: white;
+            margin: 0 3px;
             animation: typing 1.4s infinite;
         }
+
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
         @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-10px); }
+            0%, 60%, 100% { transform: translateY(0); opacity: 1; }
+            30% { transform: translateY(-15px); opacity: 0.7; }
         }
+
         @media (max-width: 600px) {
             .container { width: 100%; height: 100vh; border-radius: 0; }
             .message-content { max-width: 85%; }
+            .header h1 { font-size: 28px; }
         }
     </style>
 </head>
 <body>
+    <!-- الخلفية المتحركة -->
+    <div class="bg-animation">
+        <div class="light"></div>
+        <div class="light"></div>
+        <div class="light"></div>
+        <div class="light"></div>
+        <div class="light"></div>
+    </div>
+
+    <!-- النجوم -->
+    <div class="stars" id="stars"></div>
+
     <div class="container">
         <div class="header">
-            <h1>🤖 بوت الذكاء الاصطناعي</h1>
-            <p>أهلاً بك! اسألني عن أي شيء</p>
+            <h1>✨ موبي - الذكاء الاصطناعي ✨</h1>
+            <p>🚀 مساعدك الذكي في كل وقت ومكان</p>
         </div>
         <div class="chat-box" id="chatBox">
             <div class="message bot">
                 <div class="message-content">
-                    مرحباً! 👋 أنا بوت ذكاء اصطناعي جاهز لمساعدتك. كيف يمكنني مساعدتك اليوم؟
+                    مرحباً! 👋 أنا موبي، بوت الذكاء الاصطناعي الخاص بك. كيف يمكنني مساعدتك اليوم؟ ✨
                 </div>
             </div>
         </div>
         <div class="input-area">
             <input type="text" id="messageInput" placeholder="اكتب رسالتك هنا..." autocomplete="off"/>
-            <button id="sendBtn">إرسال</button>
+            <button id="sendBtn">✈️ إرسال</button>
         </div>
     </div>
+
     <script>
+        // إنشاء النجوم
+        const starsContainer = document.getElementById('stars');
+        for (let i = 0; i < 100; i++) {
+            const star = document.createElement('div');
+            star.className = 'star';
+            star.style.left = Math.random() * 100 + '%';
+            star.style.top = Math.random() * 100 + '%';
+            star.style.animationDelay = Math.random() * 3 + 's';
+            starsContainer.appendChild(star);
+        }
+
         const API_URL = window.location.origin + '/api/chat';
         let sessionId = localStorage.getItem('sessionId') || null;
         const chatBox = document.getElementById('chatBox');
@@ -542,7 +790,7 @@ def home():
             } catch (error) {
                 console.error('Error:', error);
                 typingIndicator.remove();
-                addMessage('عذراً، حدث خطأ في الاتصال. حاول مرة أخرى.', 'bot');
+                addMessage('عذراً، حدث خطأ في الاتصال. حاول مرة أخرى. 😔', 'bot');
             }
             messageInput.disabled = false;
             sendBtn.disabled = false;
