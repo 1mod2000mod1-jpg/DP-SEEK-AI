@@ -6,10 +6,12 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 import hashlib
+import secrets
+from functools import wraps
 
 # تهيئة Flask
 app = Flask(__name__)
-CORS(app)  # للسماح للموقع بالاتصال
+CORS(app)
 
 # توكن البوت
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -18,8 +20,8 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # قائمة المشرفين
 ADMINS = [6521966233]
 
-# مفتاح سري للموقع (API Key)
-API_SECRET = os.environ.get('API_SECRET', 'change-this-secret-key')
+# مفتاح API السري (يُنشأ تلقائياً أو تضعه يدوياً)
+API_SECRET_KEY = os.environ.get('API_SECRET_KEY', secrets.token_urlsafe(32))
 
 # تهيئة قاعدة البيانات
 def init_db():
@@ -36,13 +38,12 @@ def init_db():
                   subscribed_at TIMESTAMP,
                   expires_at TIMESTAMP)''')
     
-    # جدول جلسات الموقع
     c.execute('''CREATE TABLE IF NOT EXISTS web_sessions
                  (session_id TEXT PRIMARY KEY,
                   created_at TIMESTAMP,
-                  message_count INTEGER DEFAULT 0)''')
+                  message_count INTEGER DEFAULT 0,
+                  last_request TIMESTAMP)''')
     
-    # جدول محادثات الموقع
     c.execute('''CREATE TABLE IF NOT EXISTS web_messages
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   session_id TEXT,
@@ -50,10 +51,67 @@ def init_db():
                   response TEXT,
                   created_at TIMESTAMP)''')
     
+    # جدول لتتبع Rate Limiting
+    c.execute('''CREATE TABLE IF NOT EXISTS rate_limits
+                 (ip_address TEXT PRIMARY KEY,
+                  request_count INTEGER DEFAULT 0,
+                  window_start TIMESTAMP)''')
+    
     conn.commit()
     conn.close()
 
 init_db()
+
+# ========== دوال الحماية ========== #
+def verify_api_key(f):
+    """التحقق من API Key"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key')
+        if not api_key or api_key != API_SECRET_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+def rate_limit_check(session_id, max_requests=20, window_minutes=60):
+    """فحص Rate Limiting - 20 طلب في الساعة لكل جلسة"""
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
+    c = conn.cursor()
+    
+    # التحقق من الجلسة
+    c.execute("SELECT message_count, last_request FROM web_sessions WHERE session_id=?", (session_id,))
+    result = c.fetchone()
+    
+    if result:
+        count, last_req = result
+        if last_req:
+            last_request_time = datetime.strptime(last_req, '%Y-%m-%d %H:%M:%S.%f')
+            time_diff = datetime.now() - last_request_time
+            
+            # إعادة تعيين العداد بعد ساعة
+            if time_diff > timedelta(minutes=window_minutes):
+                c.execute("UPDATE web_sessions SET message_count=0, last_request=? WHERE session_id=?",
+                         (datetime.now(), session_id))
+                conn.commit()
+                conn.close()
+                return True
+            
+            # التحقق من الحد الأقصى
+            if count >= max_requests:
+                conn.close()
+                return False
+    
+    conn.close()
+    return True
+
+def update_rate_limit(session_id):
+    """تحديث عداد الطلبات"""
+    conn = sqlite3.connect('bot_data.db', check_same_thread=False)
+    c = conn.cursor()
+    c.execute("UPDATE web_sessions SET message_count = message_count + 1, last_request = ? WHERE session_id = ?",
+              (datetime.now(), session_id))
+    conn.commit()
+    conn.close()
 
 # ========== دوال الحظر ========== #
 def ban_user(user_id, reason="إساءة استخدام"):
@@ -104,10 +162,11 @@ def is_subscribed(user_id):
 
 # ========== دوال جلسات الموقع ========== #
 def create_session():
-    session_id = hashlib.md5(str(datetime.now()).encode()).hexdigest()
+    session_id = secrets.token_urlsafe(32)
     conn = sqlite3.connect('bot_data.db', check_same_thread=False)
     c = conn.cursor()
-    c.execute("INSERT INTO web_sessions VALUES (?, ?, 0)", (session_id, datetime.now()))
+    c.execute("INSERT INTO web_sessions VALUES (?, ?, 0, ?)", 
+              (session_id, datetime.now(), datetime.now()))
     conn.commit()
     conn.close()
     return session_id
@@ -117,13 +176,12 @@ def save_web_message(session_id, message, response):
     c = conn.cursor()
     c.execute("INSERT INTO web_messages (session_id, message, response, created_at) VALUES (?, ?, ?, ?)",
               (session_id, message, response, datetime.now()))
-    c.execute("UPDATE web_sessions SET message_count = message_count + 1 WHERE session_id = ?", (session_id,))
     conn.commit()
     conn.close()
 
 # ========== دالة الذكاء الاصطناعي الموحدة ========== #
 def get_ai_response(text):
-    """دالة موحدة للحصول على رد من الذكاء الاصطناعي"""
+    """دالة موحدة للحصول على رد من الذكاء الاصطناعي - محمية"""
     try:
         res = requests.get(f"https://sii3.top/api/deepseek.php?v3={text}", timeout=10)
         res.raise_for_status()
@@ -133,10 +191,11 @@ def get_ai_response(text):
         print(f"AI Error: {e}")
         return "⚠️ عذراً، حدث خطأ في المعالجة"
 
-# ========== API للموقع ========== #
+# ========== API للموقع - محمي ========== #
 @app.route('/api/chat', methods=['POST'])
+@verify_api_key
 def web_chat():
-    """API موحد للموقع - بدون حاجة للاشتراك"""
+    """API محمي بـ API Key + Rate Limiting"""
     try:
         data = request.get_json()
         message = data.get('message', '').strip()
@@ -148,6 +207,16 @@ def web_chat():
         # إنشاء جلسة جديدة إذا لم تكن موجودة
         if not session_id:
             session_id = create_session()
+        
+        # فحص Rate Limiting
+        if not rate_limit_check(session_id):
+            return jsonify({
+                "error": "لقد تجاوزت الحد الأقصى للطلبات. حاول مرة أخرى بعد ساعة.",
+                "session_id": session_id
+            }), 429
+        
+        # تحديث عداد الطلبات
+        update_rate_limit(session_id)
         
         # الحصول على الرد من الذكاء الاصطناعي
         ai_response = get_ai_response(message)
@@ -166,8 +235,9 @@ def web_chat():
         return jsonify({"error": "حدث خطأ في الخادم"}), 500
 
 @app.route('/api/history/<session_id>', methods=['GET'])
+@verify_api_key
 def get_history(session_id):
-    """الحصول على سجل المحادثات لجلسة معينة"""
+    """الحصول على سجل المحادثات - محمي"""
     try:
         conn = sqlite3.connect('bot_data.db', check_same_thread=False)
         c = conn.cursor()
@@ -191,7 +261,7 @@ def get_history(session_id):
         print(f"Error in get_history: {e}")
         return jsonify({"error": "حدث خطأ"}), 500
 
-# ========== أوامر البوت (كما هي) ========== #
+# ========== أوامر البوت ========== #
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -201,9 +271,9 @@ def send_welcome(message):
         return
         
     welcome_text = """
-🌹 أهلاً وسهلاً بك!
+🌹 أهلاً وسهلاً بك في موبي!
 
-أنا بوت الذكاء الاصطناعي موبي، يمكنك محاورتي في أي موضوع.
+أنا بوت الذكاء الاصطناعي، يمكنك محاورتي في أي موضوع.
 
 📋 الأوامر المتاحة:
 /help - عرض المساعدة
@@ -307,6 +377,9 @@ def stats_command(message):
     c.execute("SELECT COUNT(*) FROM web_sessions")
     web_users = c.fetchone()[0]
     
+    c.execute("SELECT SUM(message_count) FROM web_sessions")
+    total_web_messages = c.fetchone()[0] or 0
+    
     conn.close()
     
     stats_text = f"""
@@ -314,6 +387,7 @@ def stats_command(message):
 
 👥 المشتركين النشطين (تليجرام): {active_subs}
 🌐 مستخدمي الموقع: {web_users}
+💬 إجمالي رسائل الموقع: {total_web_messages}
 🚫 المستخدمين المحظورين: {banned_users}
 🚀 حالة البوت: نشط ✅
     """
@@ -334,8 +408,6 @@ def handle_all_messages(message):
         return
     
     bot.send_chat_action(message.chat.id, 'typing')
-    
-    # استخدام الدالة الموحدة
     response = get_ai_response(message.text)
     bot.reply_to(message, response)
 
@@ -352,8 +424,7 @@ def webhook():
 
 @app.route('/')
 def home():
-    # عرض صفحة الموقع مباشرة
-    return """
+    return f"""
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -361,9 +432,9 @@ def home():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>موبي - بوت الذكاء الاصطناعي</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         
-        body {
+        body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #0a0a0a;
             height: 100vh;
@@ -372,10 +443,9 @@ def home():
             align-items: center;
             overflow: hidden;
             position: relative;
-        }
+        }}
 
-        /* خلفية الأضواء المتحركة */
-        .bg-animation {
+        .bg-animation {{
             position: fixed;
             top: 0;
             left: 0;
@@ -383,93 +453,92 @@ def home():
             height: 100%;
             overflow: hidden;
             z-index: 0;
-        }
+        }}
 
-        .light {
+        .light {{
             position: absolute;
             border-radius: 50%;
             filter: blur(60px);
             opacity: 0.6;
             animation: float 8s infinite ease-in-out;
-        }
+        }}
 
-        .light:nth-child(1) {
+        .light:nth-child(1) {{
             width: 300px;
             height: 300px;
             background: linear-gradient(45deg, #ff006e, #8338ec);
             top: -100px;
             left: -100px;
             animation-delay: 0s;
-        }
+        }}
 
-        .light:nth-child(2) {
+        .light:nth-child(2) {{
             width: 350px;
             height: 350px;
             background: linear-gradient(45deg, #3a86ff, #06ffa5);
             bottom: -100px;
             right: -100px;
             animation-delay: 2s;
-        }
+        }}
 
-        .light:nth-child(3) {
+        .light:nth-child(3) {{
             width: 250px;
             height: 250px;
             background: linear-gradient(45deg, #fb5607, #ffbe0b);
             top: 50%;
             right: -100px;
             animation-delay: 4s;
-        }
+        }}
 
-        .light:nth-child(4) {
+        .light:nth-child(4) {{
             width: 280px;
             height: 280px;
             background: linear-gradient(45deg, #06ffa5, #3a86ff);
             bottom: 20%;
             left: 10%;
             animation-delay: 1s;
-        }
+        }}
 
-        .light:nth-child(5) {
+        .light:nth-child(5) {{
             width: 320px;
             height: 320px;
             background: linear-gradient(45deg, #8338ec, #ff006e);
             top: 20%;
             left: 50%;
             animation-delay: 3s;
-        }
+        }}
 
-        @keyframes float {
-            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
-            25% { transform: translate(50px, -50px) scale(1.1); opacity: 0.8; }
-            50% { transform: translate(-30px, 30px) scale(0.9); opacity: 0.5; }
-            75% { transform: translate(40px, 60px) scale(1.05); opacity: 0.7; }
-        }
+        @keyframes float {{
+            0%, 100% {{ transform: translate(0, 0) scale(1); opacity: 0.6; }}
+            25% {{ transform: translate(50px, -50px) scale(1.1); opacity: 0.8; }}
+            50% {{ transform: translate(-30px, 30px) scale(0.9); opacity: 0.5; }}
+            75% {{ transform: translate(40px, 60px) scale(1.05); opacity: 0.7; }}
+        }}
 
-        /* نجوم براقة */
-        .stars {
+        .stars {{
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             z-index: 1;
-        }
+        }}
 
-        .star {
+        .star {{
             position: absolute;
             width: 2px;
             height: 2px;
             background: white;
             border-radius: 50%;
             animation: twinkle 3s infinite;
-        }
+        }}
 
-        @keyframes twinkle {
-            0%, 100% { opacity: 0.3; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.5); }
-        }
+        @keyframes twinkle {{
+            0%, 100% {{ opacity: 0.3; transform: scale(1); }}
+            50% {{ opacity: 1; transform: scale(1.5); }}
+        }}
 
-        .container {
+        .container {{
             width: 90%;
             max-width: 850px;
             height: 90vh;
@@ -486,24 +555,24 @@ def home():
             position: relative;
             z-index: 10;
             animation: containerGlow 4s infinite alternate;
-        }
+        }}
 
-        @keyframes containerGlow {
-            0% { box-shadow: 0 25px 80px rgba(138, 43, 226, 0.4), 0 0 100px rgba(0, 191, 255, 0.3); }
-            50% { box-shadow: 0 25px 80px rgba(255, 0, 110, 0.5), 0 0 120px rgba(6, 255, 165, 0.4); }
-            100% { box-shadow: 0 25px 80px rgba(251, 86, 7, 0.4), 0 0 100px rgba(138, 43, 226, 0.3); }
-        }
+        @keyframes containerGlow {{
+            0% {{ box-shadow: 0 25px 80px rgba(138, 43, 226, 0.4), 0 0 100px rgba(0, 191, 255, 0.3); }}
+            50% {{ box-shadow: 0 25px 80px rgba(255, 0, 110, 0.5), 0 0 120px rgba(6, 255, 165, 0.4); }}
+            100% {{ box-shadow: 0 25px 80px rgba(251, 86, 7, 0.4), 0 0 100px rgba(138, 43, 226, 0.3); }}
+        }}
 
-        .header {
+        .header {{
             background: linear-gradient(135deg, rgba(138, 43, 226, 0.9), rgba(255, 0, 110, 0.9));
             color: white;
             padding: 30px;
             text-align: center;
             position: relative;
             overflow: hidden;
-        }
+        }}
 
-        .header::before {
+        .header::before {{
             content: '';
             position: absolute;
             top: -50%;
@@ -512,14 +581,14 @@ def home():
             height: 200%;
             background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
             animation: shine 3s infinite;
-        }
+        }}
 
-        @keyframes shine {
-            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
-            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
-        }
+        @keyframes shine {{
+            0% {{ transform: translateX(-100%) translateY(-100%) rotate(45deg); }}
+            100% {{ transform: translateX(100%) translateY(100%) rotate(45deg); }}
+        }}
 
-        .header h1 {
+        .header h1 {{
             font-size: 38px;
             margin-bottom: 8px;
             text-shadow: 0 0 20px rgba(255, 255, 255, 0.8),
@@ -527,91 +596,91 @@ def home():
             animation: pulse 2s infinite;
             position: relative;
             z-index: 1;
-        }
+        }}
 
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.03); }
-        }
+        @keyframes pulse {{
+            0%, 100% {{ transform: scale(1); }}
+            50% {{ transform: scale(1.03); }}
+        }}
 
-        .header p {
+        .header p {{
             font-size: 16px;
             opacity: 0.95;
             position: relative;
             z-index: 1;
-        }
+        }}
 
-        .chat-box {
+        .chat-box {{
             flex: 1;
             padding: 25px;
             overflow-y: auto;
             background: rgba(10, 10, 20, 0.6);
             position: relative;
-        }
+        }}
 
-        .chat-box::-webkit-scrollbar { width: 8px; }
-        .chat-box::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
-        .chat-box::-webkit-scrollbar-thumb { 
+        .chat-box::-webkit-scrollbar {{ width: 8px; }}
+        .chat-box::-webkit-scrollbar-track {{ background: rgba(255,255,255,0.05); }}
+        .chat-box::-webkit-scrollbar-thumb {{ 
             background: linear-gradient(180deg, #8a2be2, #ff006e);
             border-radius: 10px;
-        }
+        }}
 
-        .message {
+        .message {{
             margin-bottom: 20px;
             display: flex;
             align-items: flex-start;
             animation: slideIn 0.5s ease;
-        }
+        }}
 
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes slideIn {{
+            from {{ opacity: 0; transform: translateY(20px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
 
-        .message.user { justify-content: flex-end; }
+        .message.user {{ justify-content: flex-end; }}
 
-        .message-content {
+        .message-content {{
             max-width: 70%;
             padding: 15px 20px;
             border-radius: 20px;
             word-wrap: break-word;
             position: relative;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        }
+        }}
 
-        .message.user .message-content {
+        .message.user .message-content {{
             background: linear-gradient(135deg, #8a2be2, #ff006e);
             color: white;
             border-bottom-right-radius: 5px;
             animation: messageGlow 2s infinite alternate;
-        }
+        }}
 
-        @keyframes messageGlow {
-            0% { box-shadow: 0 5px 15px rgba(138, 43, 226, 0.5); }
-            100% { box-shadow: 0 5px 25px rgba(255, 0, 110, 0.7); }
-        }
+        @keyframes messageGlow {{
+            0% {{ box-shadow: 0 5px 15px rgba(138, 43, 226, 0.5); }}
+            100% {{ box-shadow: 0 5px 25px rgba(255, 0, 110, 0.7); }}
+        }}
 
-        .message.bot .message-content {
+        .message.bot .message-content {{
             background: linear-gradient(135deg, rgba(58, 134, 255, 0.9), rgba(6, 255, 165, 0.9));
             color: white;
             border-bottom-left-radius: 5px;
             animation: botGlow 2s infinite alternate;
-        }
+        }}
 
-        @keyframes botGlow {
-            0% { box-shadow: 0 5px 15px rgba(58, 134, 255, 0.5); }
-            100% { box-shadow: 0 5px 25px rgba(6, 255, 165, 0.7); }
-        }
+        @keyframes botGlow {{
+            0% {{ box-shadow: 0 5px 15px rgba(58, 134, 255, 0.5); }}
+            100% {{ box-shadow: 0 5px 25px rgba(6, 255, 165, 0.7); }}
+        }}
 
-        .input-area {
+        .input-area {{
             padding: 25px;
             background: rgba(20, 20, 30, 0.9);
             border-top: 2px solid rgba(255, 255, 255, 0.1);
             display: flex;
             gap: 15px;
-        }
+        }}
 
-        #messageInput {
+        #messageInput {{
             flex: 1;
             padding: 18px 25px;
             border: 2px solid rgba(138, 43, 226, 0.5);
@@ -622,17 +691,17 @@ def home():
             background: rgba(255, 255, 255, 0.05);
             color: white;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        }
+        }}
 
-        #messageInput::placeholder { color: rgba(255,255,255,0.5); }
+        #messageInput::placeholder {{ color: rgba(255,255,255,0.5); }}
 
-        #messageInput:focus {
+        #messageInput:focus {{
             border-color: #8a2be2;
             box-shadow: 0 0 20px rgba(138, 43, 226, 0.6);
             background: rgba(255, 255, 255, 0.08);
-        }
+        }}
 
-        #sendBtn {
+        #sendBtn {{
             padding: 18px 35px;
             background: linear-gradient(135deg, #8a2be2, #ff006e);
             color: white;
@@ -645,9 +714,9 @@ def home():
             box-shadow: 0 5px 20px rgba(138, 43, 226, 0.5);
             position: relative;
             overflow: hidden;
-        }
+        }}
 
-        #sendBtn::before {
+        #sendBtn::before {{
             content: '';
             position: absolute;
             top: 50%;
@@ -658,31 +727,31 @@ def home():
             background: rgba(255,255,255,0.3);
             transform: translate(-50%, -50%);
             transition: width 0.6s, height 0.6s;
-        }
+        }}
 
-        #sendBtn:hover::before {
+        #sendBtn:hover::before {{
             width: 300px;
             height: 300px;
-        }
+        }}
 
-        #sendBtn:hover {
+        #sendBtn:hover {{
             transform: scale(1.08);
             box-shadow: 0 8px 30px rgba(255, 0, 110, 0.7);
-        }
+        }}
 
-        #sendBtn:active { transform: scale(0.95); }
-        #sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+        #sendBtn:active {{ transform: scale(0.95); }}
+        #sendBtn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
 
-        .typing-indicator {
+        .typing-indicator {{
             display: none;
             padding: 15px 20px;
             background: linear-gradient(135deg, rgba(58, 134, 255, 0.8), rgba(6, 255, 165, 0.8));
             border-radius: 20px;
             width: fit-content;
             box-shadow: 0 5px 15px rgba(58, 134, 255, 0.5);
-        }
+        }}
 
-        .typing-indicator span {
+        .typing-indicator span {{
             display: inline-block;
             width: 10px;
             height: 10px;
@@ -690,25 +759,24 @@ def home():
             background: white;
             margin: 0 3px;
             animation: typing 1.4s infinite;
-        }
+        }}
 
-        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        .typing-indicator span:nth-child(2) {{ animation-delay: 0.2s; }}
+        .typing-indicator span:nth-child(3) {{ animation-delay: 0.4s; }}
 
-        @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); opacity: 1; }
-            30% { transform: translateY(-15px); opacity: 0.7; }
-        }
+        @keyframes typing {{
+            0%, 60%, 100% {{ transform: translateY(0); opacity: 1; }}
+            30% {{ transform: translateY(-15px); opacity: 0.7; }}
+        }}
 
-        @media (max-width: 600px) {
-            .container { width: 100%; height: 100vh; border-radius: 0; }
-            .message-content { max-width: 85%; }
-            .header h1 { font-size: 28px; }
-        }
+        @media (max-width: 600px) {{
+            .container {{ width: 100%; height: 100vh; border-radius: 0; }}
+            .message-content {{ max-width: 85%; }}
+            .header h1 {{ font-size: 28px; }}
+        }}
     </style>
 </head>
 <body>
-    <!-- الخلفية المتحركة -->
     <div class="bg-animation">
         <div class="light"></div>
         <div class="light"></div>
@@ -717,7 +785,6 @@ def home():
         <div class="light"></div>
     </div>
 
-    <!-- النجوم -->
     <div class="stars" id="stars"></div>
 
     <div class="container">
@@ -739,32 +806,32 @@ def home():
     </div>
 
     <script>
-        // إنشاء النجوم
         const starsContainer = document.getElementById('stars');
-        for (let i = 0; i < 100; i++) {
+        for (let i = 0; i < 100; i++) {{
             const star = document.createElement('div');
             star.className = 'star';
             star.style.left = Math.random() * 100 + '%';
             star.style.top = Math.random() * 100 + '%';
             star.style.animationDelay = Math.random() * 3 + 's';
             starsContainer.appendChild(star);
-        }
+        }}
 
         const API_URL = window.location.origin + '/api/chat';
+        const API_KEY = '{API_SECRET_KEY}';
         let sessionId = localStorage.getItem('sessionId') || null;
         const chatBox = document.getElementById('chatBox');
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
 
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+        messageInput.addEventListener('keypress', (e) => {{
+            if (e.key === 'Enter' && !e.shiftKey) {{
                 e.preventDefault();
                 sendMessage();
-            }
-        });
+            }}
+        }});
         sendBtn.addEventListener('click', sendMessage);
 
-        async function sendMessage() {
+        async function sendMessage() {{
             const message = messageInput.value.trim();
             if (!message) return;
 
@@ -774,48 +841,61 @@ def home():
             messageInput.value = '';
             const typingIndicator = showTypingIndicator();
 
-            try {
-                const response = await fetch(API_URL, {
+            try {{
+                const response = await fetch(API_URL, {{
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message, session_id: sessionId })
-                });
+                    headers: {{ 
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    }},
+                    body: JSON.stringify({{ message: message, session_id: sessionId }})
+                }});
+                
+                if (response.status === 429) {{
+                    const data = await response.json();
+                    typingIndicator.remove();
+                    addMessage(data.error, 'bot');
+                    messageInput.disabled = false;
+                    sendBtn.disabled = false;
+                    return;
+                }}
+                
                 const data = await response.json();
-                if (data.session_id) {
+                if (data.session_id) {{
                     sessionId = data.session_id;
                     localStorage.setItem('sessionId', sessionId);
-                }
+                }}
                 typingIndicator.remove();
                 addMessage(data.response, 'bot');
-            } catch (error) {
+            }} catch (error) {{
                 console.error('Error:', error);
                 typingIndicator.remove();
                 addMessage('عذراً، حدث خطأ في الاتصال. حاول مرة أخرى. 😔', 'bot');
-            }
+            }}
             messageInput.disabled = false;
             sendBtn.disabled = false;
             messageInput.focus();
-        }
+        }}
 
-        function addMessage(text, type) {
+        function addMessage(text, type) {{
             const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
+            messageDiv.className = `message ${{type}}`;
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             contentDiv.textContent = text;
             messageDiv.appendChild(contentDiv);
             chatBox.appendChild(messageDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
-        }
+        }}
 
-        function showTypingIndicator() {
+        function showTypingIndicator() {{
             const indicator = document.createElement('div');
             indicator.className = 'message bot';
             indicator.innerHTML = `<div class="typing-indicator" style="display: block;"><span></span><span></span><span></span></div>`;
             chatBox.appendChild(indicator);
             chatBox.scrollTop = chatBox.scrollHeight;
             return indicator;
-        }
+        }}
         messageInput.focus();
     </script>
 </body>
@@ -824,25 +904,25 @@ def home():
 
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"})
+    return jsonify({{"status": "healthy", "protected": True}})
 
-# ========== تشغيل التطبيق ========== #
 if __name__ == '__main__':
-    print("🚀 بدء تشغيل بوت التلغرام...")
+    print("🚀 بدء تشغيل بوت التلغرام المحمي...")
+    print(f"🔒 API Secret Key: {{API_SECRET_KEY[:10]}}...")
     
     try:
         bot.remove_webhook()
         print("✅ تم حذف الويب هوك القديم")
     except Exception as e:
-        print(f"⚠️ خطأ في حذف الويب هوك: {e}")
+        print(f"⚠️ خطأ في حذف الويب هوك: {{e}}")
     
     try:
-        webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/webhook"
+        webhook_url = f"https://{{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}}/webhook"
         bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print(f"✅ تم تعيين الويب هوك: {webhook_url}")
+        print(f"✅ تم تعيين الويب هوك: {{webhook_url}}")
     except Exception as e:
-        print(f"⚠️ خطأ في تعيين الويب هوك: {e}")
+        print(f"⚠️ خطأ في تعيين الويب هوك: {{e}}")
     
     port = int(os.environ.get('PORT', 5000))
-    print(f"🌐 الخادم يعمل على المنفذ: {port}")
+    print(f"🌐 الخادم يعمل على المنفذ: {{port}}")
     app.run(host='0.0.0.0', port=port, debug=False)
