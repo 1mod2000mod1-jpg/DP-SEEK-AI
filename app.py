@@ -1166,27 +1166,45 @@ function showTypingIndicator() {{
 </body>
 </html>"""
 
+
 @app.route('/health')
 def health_check():
     return jsonify({{"status": "healthy", "protected": True}})
 
 if __name__ == '__main__':
     print("🚀 بدء تشغيل موبي المحمي...")
-    print(f"🔒 API Secret Key: {{API_SECRET_KEY[:10]}}...")
     
-    try:
-        bot.remove_webhook()
-        print("✅ تم حذف الويب هوك القديم")
-    except Exception as e:
-        print(f"⚠️ خطأ في حذف الويب هوك: {{e}}")
-    
-    try:
-        webhook_url = f"https://{{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}}/webhook"
-        bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print(f"✅ تم تعيين الويب هوك: {{webhook_url}}")
-    except Exception as e:
-        print(f"⚠️ خطأ في تعيين الويب هوك: {{e}}")
+    # تحقق من وجود BOT_TOKEN
+    if not BOT_TOKEN:
+        print("❌ خطأ: لم يتم العثور على متغير البيئة BOT_TOKEN.")
+    else:
+        print(f"🔒 API Secret Key: {API_SECRET_KEY[:10]}...")
+        
+        # الحصول على اسم المضيف الخارجي لـ Webhook
+        # استخدام RENDER_EXTERNAL_HOSTNAME إذا كان متاحاً، وإلا استخدام IP المحلي
+        external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+        
+        if external_hostname:
+            webhook_url = f"https://{external_hostname}/webhook"
+            
+            try:
+                bot.remove_webhook()
+                print("✅ تم حذف الويب هوك القديم")
+            except Exception as e:
+                print(f"⚠️ خطأ في حذف الويب هوك: {e}")
+            
+            try:
+                # تعيين الويب هوك الجديد
+                bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+                print(f"✅ تم تعيين الويب هوك: {webhook_url}")
+            except Exception as e:
+                print(f"⚠️ خطأ في تعيين الويب هوك: {e}")
+        else:
+            print("⚠️ ملاحظة: لم يتم العثور على RENDER_EXTERNAL_HOSTNAME، لن يتم تعيين Webhook. يفضل استخدامه في بيئات الإنتاج.")
+            # إذا لم يتم العثور على External Hostname، يمكن تشغيل البوت في وضع Polling هنا للتجربة المحلية 
+            # ولكن في بيئة إنتاج (مثل Render) يجب توفير الـ Webhook.
     
     port = int(os.environ.get('PORT', 5000))
-    print(f"🌐 الخادم يعمل على المنفذ: {{port}}")
+    print(f"🌐 الخادم يعمل على المنفذ: {port}")
+    # تشغيل تطبيق Flask لاستقبال طلبات الويب و Webhook
     app.run(host='0.0.0.0', port=port, debug=False)
