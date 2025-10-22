@@ -944,10 +944,10 @@ body {{
 
 <div id="loginModal">
     <div class="login-box">
-        <h2>🕷️ موبي</h2>
+        <h2>🕷️ موبي الذكي 🕷️</h2>
         <p>أدخل رمز الدخول للمتابعة</p>
         <input type="text" id="accessCodeInput" placeholder="أدخل رمز الدخول..." autocomplete="off">
-        <button id="loginBtn">🚀 دخول</button>
+        <button id="loginBtn">🚀 دخول 🚀</button>
         <div id="loginError" class="error-message"></div>
     </div>
 </div>
@@ -955,7 +955,7 @@ body {{
 <div class="container" id="chatContainer" style="display: none;">
     <div class="header">
         <h1>✨ موبي - الذكاء الاصطناعي ✨</h1>
-        <p>🚀 مساعدك الذكي في كل وقت ومكان</p>
+        <p>🚀 مساعدك الذكي في كل وقت ومكان 🚀</p>
     </div>
     <div class="chat-box" id="chatBox">
         <div class="message bot">
@@ -966,7 +966,7 @@ body {{
     </div>
     <div class="input-area">
         <input type="text" id="messageInput" placeholder="اكتب رسالتك هنا..." autocomplete="off"/>
-        <button id="sendBtn">✈️ إرسال</button>
+        <button id="sendBtn">✈️ إرسال ✈️</button>
     </div>
 </div>
 
