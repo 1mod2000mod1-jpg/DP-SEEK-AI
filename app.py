@@ -13,7 +13,7 @@ app = Flask(__name__)
 CORS(app)
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-bot = telebot.TeleBot(8315820582:AAGl6DVh09quDgikpdrFYxaMV4MK3ZZIMS4)
+bot = telebot.TeleBot(BOT_TOKEN)
 
 ADMINS = [6521966233]
 API_SECRET_KEY = os.environ.get('API_SECRET_KEY', secrets.token_urlsafe(32))
